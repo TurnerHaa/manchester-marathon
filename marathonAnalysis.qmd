@@ -1,0 +1,891 @@
+---
+title: "Race debrief:<br>Manchester Marathon 2025"
+format: html
+editor: visual
+title-fontstyle: "\LARGE"
+---
+
+```{=html}
+<style>
+  body {
+    background-color: #f8f8f8;
+  }
+</style>
+```
+
+```{r}
+#| include: false
+#| message: false
+#| warning: false
+
+# load packages
+if(!require(pacman))install.packages("pacman")
+
+pacman::p_load(googlesheets4, janitor, tidyverse, ggthemes, extrafont, gganimate, ggpattern, ggview, geomtextpath, gridExtra, scales, hrbrthemes, ggbeeswarm, ggtext, patchwork)
+
+
+# import training data
+marathonRAW <- read.csv("data/marathonTraining.csv")
+
+# Fonts
+# font_import() # only run this once
+loadfonts()
+
+title_font <-  "Cambria"
+font <- "Poppins"
+
+# Clean initial data
+marathon <- marathonRAW |> 
+  clean_names() |> 
+  filter(!is.na(week))
+
+# Remove "/mi" from pace column
+marathon <- marathon |> 
+  mutate(
+    pace = substr(pace, start = 1, stop = nchar(pace) - 3)
+  )
+
+# Clean time column
+marathon <- marathon |> 
+  separate_wider_delim(time, delim = " ", names = c("hours", "minutes", "seconds"), too_few = "align_end") |> 
+  mutate(across(c(hours, minutes, seconds), ~ substr(., start = 1, stop = nchar(.) - 1))) |> 
+  mutate(across(c(hours, minutes, seconds), as.numeric, .names = "{.col}")) |> 
+  mutate(
+    # convert hours to minutes
+    hours = hours * 60,
+    hours = case_when(
+      is.na(hours) ~ 0,
+      TRUE ~ hours
+    ),
+    # convert seconds to minutes
+    seconds = seconds / 60,
+    # create a combined minutes duration column
+    total_mins = round(rowSums(across(c(hours, minutes, seconds)), na.rm = TRUE),1)
+    ) |> 
+  relocate(total_mins, .after = seconds) |> 
+  mutate(
+    is_marathon = case_when(
+      type == "Marathon" ~ "Yes",
+      TRUE ~ "No"
+    )
+  )
+
+```
+
+------------------------------------------------------------------------
+
+I came, I swore, I cramped.
+
+Some Brits call it the ‘bonk’, to many it’s known as ‘hitting the wall’, but my favorite by far is the German phrase – ‘der Mann mit dem Hammer’ or ‘the man with the hammer’.
+
+I thought I could outrun the man and his hammer during my first marathon. But at mile 19, he hit me with a heavy swing that sent my legs cramping, lungs burning and eyes watering.
+
+We can watch him do it right here in the data.
+
+```{r}
+#| echo: false
+# import race day pace data
+paceRAW <- read_csv("data/racePace.csv")
+
+# clean pace data
+pace <- paceRAW |> 
+  clean_names() |> 
+  mutate(
+    pace = str_sub(pace, end = -4),
+    pace_label = pace,
+    # pace = paste0("00:", pace),
+    pace = ms(pace),
+    on_pace = ifelse(pace < hms("00:09:09"), "On pace", "Off pace"),
+    pace_seconds = as.numeric(pace)
+  ) |> 
+  filter(mile <= 26)
+
+# viz 1- pace breakdown
+ggplot(pace, aes(x = mile, y = pace_seconds)) +
+  geom_line(colour = "#71797E") +
+  geom_point(aes(colour = on_pace), size = 2.5) +
+  annotate(geom = "rect", xmin = 19, xmax = 27, ymin = 9 * 60 + 9, ymax = 12 * 60 + 30, fill = "#f5a5a6", alpha = 0.2) +
+  geom_hline(yintercept = (9 * 60 + 9), linewidth = 0.5, linetype = 2,  colour = "#818589") +
+  geom_vline(xintercept = 19, linewidth = 0.8, linetype = 1,  colour = "#d01c1e", alpha = 0.6) +
+  annotate("text", x = 5.5, y = (9 * 60 + 16), label = "4-hr marathon pace - 9:09/mi", family = font, size = 3.5, colour = "black") +
+  annotate(geom = "rect", xmin = 23.8, xmax = 26.7, ymin = 9 * 60 - 10, ymax = 9 * 60 + 8, fill = "#f8f8f8") +
+  annotate("text", x = 25.2, y = (9 * 60 + 18), label = "Too slow", family = font, size = 3.5, colour = "#d01c1e") +
+  annotate("text", x = 25.2, y = (9 * 60 + 2), label = "On pace", family = font, size = 3.5, colour = "#044389") +
+  annotate("text", x = 14.5, y = (11 * 60 + 14), label = "Hitting the\nwall", family = font, size = 3.5, colour = "black", hjust = 1) +
+  annotate(
+    "curve",
+    x = 15, y = 11 * 60 + 16,
+    xend = 19, yend = 11 * 60 + 6,
+    curvature = -0.3,
+    arrow = arrow(length = unit(0.03, "npc")),
+    color = "#818589",
+    linewidth = 0.4
+  ) +
+  scale_y_continuous(
+    labels = function(x) format(as.POSIXct(x, tz = "GMT"), "%M:%S"),
+    name = "Pace",
+    limits = c((8 * 60 + 30), (12 * 60 + 30)),
+    breaks = seq((8 * 60 + 30), (12 * 60 + 30), by = 30)
+    # expand = c(0, 0),
+  ) +
+  scale_x_continuous(
+    limits = c(0, 27),
+    expand = c(0, 0),
+    breaks = seq(0, 26, by = 2)
+  ) +
+  labs(
+    title = "Manchester Marathon pace",
+    subtitle = "Minutes per mile"
+  ) +
+  scale_colour_manual(values = c("#d01c1e", "#044389")) +
+  guides(
+    size = guide_legend(override.aes = list(size = 5))
+    ) +
+  theme_ipsum(base_family = font) +
+  theme(
+    plot.background = element_rect(fill = "#f8f8f8", colour = NA),
+    panel.background = element_rect(fill = "#f8f8f8", colour = NA),
+    legend.title = element_blank(),
+    text = element_text(size = 10),
+    axis.text.y = element_text(size = 10),
+    axis.text.x = element_text(size = 11.5),
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    plot.margin = margin(5, 5, 5, 5),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    plot.title = element_text(size = 16, margin = margin(0, 0, 5, 8)),
+    plot.subtitle = element_text(size = 12, margin = margin(0, 0, 5, 8), colour = "#818589"),
+    plot.title.position = "plot"
+  )
+
+```
+
+As we can see, I was comfortably on track for a finish in under 4 hours right up until mile 19. In fact, I gradually sped up after leaving the start line.
+
+But I paid for that extra speed with interest from miles 19 to 23, only clawing back some desperate pace in the final few miles to reach the relief of the finish line.
+
+To be clear, I’m extremely happy with my time (4hrs 8m 10s)! But with my name in the ballot for London next year, I looked back at my training data to find some lessons for next time.
+
+```{r}
+#| echo: false
+#| warning: false
+
+# appends centigrade unit to final axis label
+final_unit <- function(breaks) {
+  labels <- label_number()(breaks)
+  
+  labels[length(labels)] <- paste0(labels[length(labels)], "°C")
+  return(labels)
+}
+
+# calculate mean temperature
+avg_temp <- marathon |> 
+  summarise(
+    temperature = mean(temperature)
+  ) |> 
+  pull()
+
+# viz 2 - beeswarm of run temperatures
+ggplot(marathon, aes(x = temperature, y = "", colour = is_marathon)) +
+  annotate("segment", x = avg_temp, xend = avg_temp, y = 0.75, yend = 1.25, colour = "#de6062", linetype = 2) +
+  annotate("text", x = avg_temp + .4, y = 1.3, label = "8.6°C", family = font, fontface= "bold", size = 6, colour = "#de6062", hjust = 0.5) +
+    annotate("text", x = 11.5, y = 1.295, label = "average", family = font, size = 3.5, colour = "#de6062", hjust = 0.5) +
+  geom_quasirandom(aes(fill = is_marathon), size = 7.5, width = 0.3, stroke = 0.5, shape = 21) +
+  annotate("rect", xmin = 19.9, xmax = 21.8, ymin = 1.07, ymax= 1.11, size = 1.5, fill = "#f8f8f8") +
+  annotate("text", x = 21, y = 1.09, label = "Marathon", family = font, size = 3.5, colour = "#de6062") +
+  theme_ipsum() +
+  labs(
+    title = "The marathon was much warmer\nthan my training runs"
+  ) +
+  scale_colour_manual(values = c("#818589", "#890404")) +
+  scale_fill_manual(values = c("grey", "#de6062")) +
+  scale_x_continuous(
+    limits = c(0, 25),
+    expand = c(0, 0),
+    breaks = seq(0, 25, by = 5),
+    labels = final_unit
+  ) +
+  scale_y_discrete(
+    expand = c(0.2, 0.2)
+  ) +
+  theme_ipsum(base_family = font) +
+  theme(
+    plot.background = element_rect(fill = "#f8f8f8", colour = NA),
+    panel.background = element_rect(fill = "#f8f8f8", colour = NA),
+    legend.title = element_blank(),
+    text = element_text(size = 10),
+    axis.text.y = element_text(size = 10),
+    axis.text.x = element_text(size = 11.5, margin = margin(t = 8)),
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    plot.margin = margin(5, 20, 5, 5),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_line(),
+    panel.grid.major.y = element_blank(),
+    plot.title = element_text(size = 16, margin = margin(0, 0, 5, 8)),
+    plot.subtitle = element_text(size = 12, margin = margin(0, 0, 5, 8), colour = "#818589"),
+    plot.title.position = "plot"
+  )
+
+```
+
+Lesson 1: Don’t race in the heat.
+
+Alright, maybe it’s not a lesson I can do anything about. But there’s a pretty clear takeaway.
+
+At 21°C the marathon was the hottest of any of my runs. Much hotter than the 8.6°C average from my training block, which started in the more frigid conditions of early January.
+
+```{r}
+#| echo: false
+# weekly mileage targets from Runna
+weekly_target <- c(12.4, 14.3, 16.2, 11.4, 18.1, 20, 21.8, 14, 23.7, 26.1, 26.1, 
+                   14.6, 26.2, 18.1, 13.4, 29)
+
+# proportion miles missed per week
+missed_miles <- marathon |> 
+  group_by(week) |> 
+  summarise(
+    ran = round(sum(distance), 1)
+  ) |> 
+  mutate(
+    target = weekly_target,
+    completed = 
+      case_when(
+        ran <= target ~ round(ran / target, 2),
+        TRUE ~ 1),
+    not_completed = 1 - completed
+  ) |> 
+  pivot_longer(
+    cols = c(completed, not_completed),
+    names_to = "status",
+    values_to = "proportion"
+  ) |> 
+  mutate(
+    status = factor(status, levels = c("not_completed", "completed"))
+  )
+
+# plot missed proportion per week
+a <- ggplot(missed_miles, aes(x = week, y = proportion, fill = status)) +
+  geom_col(position = "stack", width = 0.8) +
+  geom_text(data = filter(missed_miles, status == "not_completed" & proportion > 0), aes(x = week, y = 0.97 - proportion, label = paste0((proportion * 100), "%")), size = 3, colour = "black", family = font, fontface = "bold") +
+  scale_fill_manual(values = c("#de6062", "#D3D3D3")) +
+  scale_y_reverse(
+    labels = scales::label_percent()
+  ) +
+  scale_x_continuous(
+    breaks = seq(1: 16),
+    expand = c(0, 0)
+  ) +
+  labs(
+    title = "Illness and injury disrupted some\ncritical training weeks",
+    subtitle = "% of <span style = 'color:#d01c1e;'>weekly target miles missed</span> each week"
+  ) +
+  theme_ipsum(base_family = font) +
+  theme(
+    plot.background = element_rect(fill = "#f8f8f8", colour = NA),
+    panel.background = element_rect(fill = "#f8f8f8", colour = NA),
+    legend.title = element_blank(),
+    text = element_text(size = 10),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 11.5),
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    plot.margin = margin(5, 5, 5, 5),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_blank(),
+    plot.title = element_text(size = 16, margin = margin(0, 0, 5, 0)),
+    plot.subtitle = element_markdown(size = 12, margin = margin(0, 0, 5, 0), colour = "#818589")
+  )
+
+# calculate overall proportion missed
+total_missed <- marathon |> 
+  group_by(week) |> 
+  summarise(
+    ran = round(sum(distance), 1)
+  ) |> 
+  mutate(
+    target = weekly_target,
+    not_ran = case_when(
+      ran >= target ~ round(target,1),
+      ran < target ~ round(target - ran, 1)
+    )
+  ) |> 
+  summarise(
+    ran = sum(ran),
+    not_ran = 305.3 - ran
+  ) |> 
+  mutate(
+    total_miles = ran + not_ran,
+    prop_ran = round(ran / total_miles, 2),
+    prop_not_ran = round(not_ran / total_miles, 2)
+  ) |> 
+  pivot_longer(
+    cols = starts_with("prop_"),
+    names_to = "status",
+    values_to = "proportion"
+  ) |> 
+  arrange(proportion) |> 
+  mutate(
+    status = factor(status, levels = c("prop_ran", "prop_not_ran")),
+    category = "Overall"
+  )
+  
+# plot missed proportion overall
+b <- ggplot(total_missed, aes(x = proportion, y = category, fill = status)) +
+  geom_col(position = "stack", width = 0.4) +
+  annotate("text", x = 0.16, y = 1, label = "13%", family = font, fontface = "bold", size = 3) +
+  coord_flip() +
+  scale_fill_manual(values = c("#D3D3D3", "#de6062")) +
+  theme_ipsum(base_family = font) +
+  theme(
+    plot.background = element_rect(fill = "#f8f8f8", colour = NA),
+    panel.background = element_rect(fill = "#f8f8f8", colour = NA),
+    legend.title = element_blank(),
+    text = element_text(size = 10),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 11.5),
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    # plot.margin = margin(-80, 5, -80, 5),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_blank(),
+    plot.title = element_text(size = 16, margin = margin(0, -30, 0, 0)),
+    plot.subtitle = element_markdown(size = 12, margin = margin(0, 0, 5, 0), colour = "#818589")
+  )
+
+# viz 3 - proportion of miles missed per week and overall
+a + b +
+  plot_layout(ncol = 2, widths = c(5, 0.75)) +
+  plot_annotation(
+  theme = theme(
+    plot.margin = margin(5, 5, 5, 5),
+    plot.background = element_rect(fill = "#f8f8f8", colour = NA)
+    )
+  )
+
+```
+
+Then there’s interrupted training.
+
+I knew I’d lost time to illness (week 8) and to injury (weeks 10 and 11), but it turned out to be less than I thought! Overall, I dropped 13% of my target mileage – that's just over 40 miles that I can't really say will be missed.
+
+So I did my training. And race day was hot for everyone. But how did my actual marathon compare?
+
+```{r}
+#| echo: false
+# import marathon performance data
+rawPerformance <- read.csv("data/manchesterResults.csv")
+
+# clean performance data
+performance <- rawPerformance |> 
+  clean_names() |> 
+  mutate(
+    race_time = hms(chiptime)
+  ) |> 
+  pivot_longer(ends_with("cumulative_time"), names_to = "checkpoint", values_to = "cumulative_time") |> 
+  select(-(ends_with(c("duration", "rank")))) |> 
+  filter(cumulative_time != "")
+
+# average performance of male runners in Manchester
+avg_males <- performance |>
+  filter(gender == "m") |> 
+  group_by(checkpoint) |> 
+  summarise(
+    times = mean(period_to_seconds(hms(cumulative_time)))
+  ) |> 
+  mutate(
+    checkpoint = factor(checkpoint)
+  ) |> 
+  mutate(
+    category = "avg_males"
+  )
+
+# # average performance of all runners in Manchester
+avg_manchester <- performance |>
+  group_by(checkpoint) |> 
+  summarise(
+    times = mean(period_to_seconds(hms(cumulative_time)))
+  ) |> 
+  mutate(
+    checkpoint = factor(checkpoint)
+  ) |> 
+  mutate(
+    category = "avg_manchester"
+  )
+
+# Kelvin Kiptum - men's world record
+Kiptum <- data.frame(
+  checkpoint = c( "split_10k_cumulative_time", "split_15k_cumulative_time", "split_21k_cumulative_time", "split_30k_cumulative_time",   
+                  "split_35k_cumulative_time",  "split_finish_cumulative_time"),
+  times = period_to_seconds(hms(c("00:28:42", "00:43:09", "01:00:48", "01:26:31", "01:40:22", "02:00:35")))
+  ) |> 
+  mutate(
+    checkpoint = factor(checkpoint)
+  ) |> 
+  mutate(
+    category = "kiptum"
+  )
+
+# Ruth Chepng'etich - women's world record
+Chepngetich <- data.frame(
+  checkpoint = c( "split_10k_cumulative_time", "split_15k_cumulative_time", "split_21k_cumulative_time", "split_30k_cumulative_time",   
+                  "split_35k_cumulative_time",  "split_finish_cumulative_time"),
+  times = period_to_seconds(hms(c("00:30:14", "00:45:32", "01:04:16", "01:31:49", "01:47:32", "02:09:56")))
+) |> 
+  mutate(
+    checkpoint = factor(checkpoint)
+  ) |> 
+  mutate(
+    category = "Chepng'etich"
+  )
+
+# fastest non-elite runner in Manchester
+griffiths <- data.frame(
+  checkpoint = c( "split_10k_cumulative_time", "split_21k_cumulative_time", "split_30k_cumulative_time",   
+                  "split_35k_cumulative_time",  "split_finish_cumulative_time"),
+  times = period_to_seconds(hms(c("00:32:25", "01:08:37", "01:37:33", "01:53:43", "02:16:56")))
+) |> 
+  mutate(
+    checkpoint = factor(checkpoint)
+  ) |> 
+  mutate(
+    category = "griffiths"
+  )
+
+# my performance in Manchester
+me <- performance |> 
+  filter(bib == 16650) |> 
+  mutate(
+    times = period_to_seconds(hms(cumulative_time)),
+    checkpoint = factor(checkpoint)
+  ) |> 
+  select(
+    checkpoint, times
+  ) |> 
+  mutate(
+    category = "me"
+  )
+
+# combine all datasets
+time_comparison <- rbind(avg_males, avg_manchester, Kiptum, Chepngetich, griffiths, me) |> 
+  mutate(
+    checkpoint = case_when(
+      checkpoint ==  "split_10k_cumulative_time" ~ "10k",
+      checkpoint ==  "split_15k_cumulative_time" ~ "15k",
+      checkpoint ==  "split_21k_cumulative_time" ~ "21k",
+      checkpoint ==  "split_30k_cumulative_time" ~ "30k",
+      checkpoint ==  "split_35k_cumulative_time" ~ "35k",
+      checkpoint ==  "split_finish_cumulative_time" ~ "Finish",
+    ),
+    checkpoint = factor(checkpoint, levels = c("10k", "15k", "21k", "30k", "35k", "Finish"))
+  )
+
+# plot avg Manchester performance
+group1 <- c("me", "avg_manchester")
+
+a <- ggplot(filter(time_comparison, category %in% group1), aes(x = checkpoint, y = times, colour = category, group = category)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 0) +
+  scale_y_continuous(
+  labels = function(x) paste0(sub("^0", "", format(as.POSIXct(x, tz = "GMT"), "%H")), "hr"),
+    limits = c(0, max(time_comparison$times) + 1800),
+    breaks = seq(0, max(time_comparison$times) + 1800, by = 3600)
+  )  +
+  labs(
+    title = "Manchester average"
+  ) +
+  annotate("text", x = 6.2, y = 14990, label = "Me", size = 2.5, family = font, fontface = "bold", colour = "#044389") +
+  scale_colour_manual(values = c("#ac4f4f", "#044389")) +
+  theme_ipsum(base_family = font) +
+  theme(
+    plot.background = element_rect(fill = "#f8f8f8", colour = NA),
+    panel.background = element_rect(fill = "#f8f8f8", colour = NA),
+    legend.title = element_blank(),
+    text = element_text(size = 10),
+    axis.text.y = element_text(),
+    axis.text.x = element_text(size = 12),
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    plot.margin = margin(5, 5, 5, 5),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_line(),
+    plot.title = element_text(size = 12, margin = margin(0, -30, 0, 0)),
+    plot.subtitle = element_markdown(size = 12, margin = margin(0, 0, 5, 0), colour = "#818589")
+  )
+
+# plot avg Manchester males performance
+group2 <- c("me", "avg_males")
+
+b <- ggplot(filter(time_comparison, category %in% group2), aes(x = checkpoint, y = times, colour = category, group = category)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 0) +
+  scale_y_continuous(
+    labels = function(x) format(as.POSIXct(x, tz = "GMT"), "%H:%M:%S"),
+    limits = c(0, max(time_comparison$times) + 1800),
+    breaks = seq(0, max(time_comparison$times) + 1800, by = 3600)
+  )  +
+  labs(
+    title = "Men's average"
+  ) +
+  annotate("text", x = 6.2, y = 14990, label = "Me", size = 2.5, family = font, fontface = "bold", colour = "#044389") +
+  scale_colour_manual(values = c("#ac4f4f", "#044389")) +
+  theme_ipsum(base_family = font) +
+  theme(
+    plot.background = element_rect(fill = "#f8f8f8", colour = NA),
+    panel.background = element_rect(fill = "#f8f8f8", colour = NA),
+    legend.title = element_blank(),
+    text = element_text(size = 10),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 12),
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    plot.margin = margin(5, 5, 5, 5),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_line(),
+    plot.title = element_text(size = 12, margin = margin(0, -30, 0, 0)),
+    plot.subtitle = element_markdown(size = 12, margin = margin(0, 0, 5, 0), colour = "#818589")
+  )
+
+# plot Ruth Chepng'etich performance
+group3 <- c("me", "Chepng'etich")
+
+c <- ggplot(filter(time_comparison, category %in% group3), aes(x = checkpoint, y = times, colour = category, group = category)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 0) +
+  scale_y_continuous(
+  labels = function(x) paste0(sub("^0", "", format(as.POSIXct(x, tz = "GMT"), "%H")), "hr"),
+    limits = c(0, max(time_comparison$times) + 1800),
+    breaks = seq(0, max(time_comparison$times) + 1800, by = 3600)
+  )  +
+  labs(
+    title = "Chepng'etich"
+  ) +
+  annotate("text", x = 6.2, y = 14990, label = "Me", size = 2.5, family = font, fontface = "bold", colour = "#044389") +
+  scale_colour_manual(values = c("#ac4f4f", "#044389")) +
+  theme_ipsum(base_family = font) +
+  theme(
+    plot.background = element_rect(fill = "#f8f8f8", colour = NA),
+    panel.background = element_rect(fill = "#f8f8f8", colour = NA),
+    legend.title = element_blank(),
+    text = element_text(size = 10),
+    axis.text.y = element_text(),
+    axis.text.x = element_text(size = 12),
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    plot.margin = margin(5, 5, 5, 5),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_line(),
+    plot.title = element_text(size = 12, margin = margin(0, -30, 0, 0)),
+    plot.subtitle = element_markdown(size = 12, margin = margin(0, 0, 5, 0), colour = "#818589")
+  )
+
+# plot Kelvin Kiptum performance
+group4 <- c("me", "kiptum")
+
+d <- ggplot(filter(time_comparison, category %in% group4), aes(x = checkpoint, y = times, colour = category, group = category)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 0) +
+  scale_y_continuous(
+    labels = function(x) format(as.POSIXct(x, tz = "GMT"), "%H:%M:%S"),
+    limits = c(0, max(time_comparison$times) + 1800),
+    breaks = seq(0, max(time_comparison$times) + 1800, by = 3600)
+  )  +
+  labs(
+    title = "Kiptum"
+  ) +
+  annotate("text", x = 6.2, y = 14990, label = "Me", size = 2.5, family = font, fontface = "bold", colour = "#044389") +
+  scale_colour_manual(values = c("#ac4f4f", "#044389")) +
+  theme_ipsum(base_family = font) +
+  theme(
+    plot.background = element_rect(fill = "#f8f8f8", colour = NA),
+    panel.background = element_rect(fill = "#f8f8f8", colour = NA),
+    legend.title = element_blank(),
+    text = element_text(size = 10),
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(size = 12),
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    plot.margin = margin(5, 5, 5, 5),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_line(),
+    plot.title = element_text(size = 12, margin = margin(0, -30, 0, 0)),
+    plot.subtitle = element_markdown(size = 12, margin = margin(0, 0, 5, 0), colour = "#818589")
+  )
+
+# viz 4 - combine plots into a grid
+a + b + c + d +
+  plot_layout(ncol = 2, nrow = 2, widths = c(7, 7, 7, 7), heights = c(1, 1, 1, 1)) +
+  plot_annotation(
+    theme = theme(
+      plot.background = element_rect(fill = "#f8f8f8", colour = NA)
+    )
+  )
+
+```
+
+Pretty decent overall! My time of *4hrs 08m* was around 20 minutes faster than the race average (*4hrs 28m*) and just a smidge quicker than the male average of *4hrs 15m*.
+
+I had wanted explore how I compared to runners my age, but Manchester's results page classified me and most other male runners as MSER (Male Senior Runner) – meaning the data wouldn't reveal much aside from falsely implying Manchester was on track to become the world's most successful [blue zone](https://en.wikipedia.org/wiki/Blue_zone).
+
+Instead, purely out of curiosity, I've included the world record times for the women's (Ruth Chepng'etich – *2hrs 9m*) and men's (Kelvin Kiptum - *2hr 0m 35s*) marathons.
+
+But those guys are superhumans. So to salve my ego, I also compared my time to a few celebrities who've gone the distance.
+
+```{r}
+#| echo: false
+# load celebrity marathon times
+celebs <- read.csv("data/celebTime.csv") |> 
+  clean_names() |> 
+  separate_wider_delim(time, delim = ":", names = c("hours", "minutes", "seconds"), too_few = "align_end") |> 
+  mutate(
+    hours = (as.double(hours) * 3600),
+    minutes = (as.double(minutes) * 60),
+    seconds = as.double(seconds)
+  ) |> 
+  rowwise() |> 
+  mutate(
+    total_time = sum(hours, minutes, seconds)
+  ) |> 
+  arrange(desc(total_time)) |> 
+  mutate(
+    colour = case_when(
+      celebrity == "Me" ~ "Me",
+      TRUE ~ "Celebrity"
+    ),
+  labels = paste0(hours / 3600, "hrs ", minutes / 60, "mins")
+  )
+
+# viz 5 - celebrity time comparison
+ggplot(celebs, aes(x = total_time, y = reorder(celebrity, total_time), fill = colour)) +
+  geom_col() +
+  geom_text(aes(label = labels, x = total_time - 1950), colour = "white", family = font, fontface = "plain") +
+  scale_x_continuous(
+    labels = function(x) paste0(sub("^0" ,"" ,format(as.POSIXct(x), tz = "GMT", format = "%H")), "hr"),
+    expand = c(0, 0),
+    limits = c(0, max(celebs$total_time)),
+    breaks = seq(0, max(celebs$total_time), by = 3600)
+  ) +
+  labs(
+    title = "Slower than Styles",
+    subtitle = "How my time compared to a selection of celebs"
+      ) +
+  scale_fill_manual(values = c("#de6062", "#044389")) +
+  theme_ipsum(base_family = font) +
+  theme(
+    plot.background = element_rect(fill = "#f8f8f8", colour = NA),
+    panel.background = element_rect(fill = "#f8f8f8", colour = NA),
+    legend.title = element_blank(),
+    text = element_text(size = 10),
+    axis.text.y = element_text(size = 10, margin = margin(r = 5)),
+    axis.text.x = element_text(size = 11.5, ),
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    plot.margin = margin(5, 5, 5, 5),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.major.x = element_line(),
+    plot.caption = element_text(face = "plain", family = font, colour = "#818589", hjust = 0),
+    plot.title = element_text(size = 16, margin = margin(0, 0, 5, 8)),
+    plot.subtitle = element_text(size = 12, margin = margin(0, 0, 5, 8), colour = "#818589"),
+    plot.title.position = "plot"
+  )
+
+```
+
+First the global stardom, now this? It seems there's nothing Harry Styles won't do to be the more successful Harry.
+
+The real 'enigma' though is Alan Turing, setting a shockingly fast *2hr 46m* in 1947. That was 21 minutes shy of the world record at the time!
+
+As for me, I'll be aiming for 'Palin Pace' come my next attempt.
+
+```{r}
+#| echo: false
+# load performance scale data
+performanceScale <- read.csv("data/performanceChart.csv") |> 
+  clean_names() |> 
+  rename("world record" = "wr") |> 
+  mutate(
+    across(2:7, hms),
+    age = as.double(age)) |> 
+   pivot_longer(
+     cols = 2:7,
+     names_to = "skill_level",
+     values_to = "upper"
+     ) |> 
+  arrange(age, upper) |> 
+  group_by(age) |> 
+  mutate(
+    skill_level = factor(skill_level, levels = c("world record", "elite", "advanced", "intermediate", "novice", "beginner")), # Correct order
+    lower = case_when(
+      skill_level == "beginner" ~ lag(upper, n = 1),
+      skill_level == "novice" ~ lag(upper, n = 1),
+      skill_level == "intermediate" ~ lag(upper, n = 1),
+      skill_level == "advanced" ~ lag(upper, n = 1),
+      skill_level == "elite" ~ lag(upper, n = 1),
+      skill_level == "world record" ~ hms("00:00:00") # Fastest starts at zero
+    )
+  ) |> 
+  ungroup() |> 
+  filter(
+    age <= 70
+  )
+   
+# my marathon time
+myPerformance <- tibble(
+  age = 26,
+  time = hms("04:08:10")
+)
+
+# Harry Styles marathon time
+harryStlesPerformance <- tibble(
+  age = 31,
+  time = hms("03:24:00")
+)
+
+# calculate midpoints of each ribbon for labels
+text_labels_data <- performanceScale %>%
+  filter(age == 70) %>% 
+  mutate(
+    lower_seconds = as.numeric(as.duration(lower)),
+    upper_seconds = as.numeric(as.duration(upper)),
+    y_text = (lower_seconds + upper_seconds) / 2
+  )
+
+# viz 6 - runninglevel.com scale plot
+ggplot(performanceScale, aes(x = age, y = upper)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = skill_level), colour = "white", alpha = 0.8) +
+  labs(
+    title = "My performance eeked me into the novice\ncategory",
+    subtitle = "Marathon performance bands by age and time",
+    caption = "Source:runninglevel.com"
+  ) +
+  geom_point(data = myPerformance, inherit.aes = F, aes(x = age, y = time), shape = 4, size = 4, colour = "#044389", stroke = 2) +
+    annotate("text", x = 28.5, y = 15620, label = "Me", colour = "#044389") +
+    annotate("rect", xmin = 70.5, xmax = 85, ymin = 0, ymax = 25200, fill = "#f8f8f8") +
+ geom_text(data = text_labels_data, # Use the new data frame
+            aes(x = 71, # Keep the x-position fixed for the labels
+                label = skill_level,
+                colour = skill_level,
+                y = y_text), # Use the calculated midpoint (now numeric)
+            size = 3.5,
+            family = font,
+            fontface = "bold",
+            hjust = 0,
+           colour = "black"
+  ) + 
+  scale_y_continuous(
+    labels = function(x) paste0(sub("^0", "", format(as.POSIXct(x, tz = "GMT"), "%H")), "hr"),
+    breaks = seq(0, 25200, by = 3600),
+    limits = c(0, 25200)
+  ) +
+  scale_x_continuous(
+    breaks = seq(10, 70, by = 5),
+    limits = c(10, 85),
+    expand = c(0, 0)
+  ) +
+  scale_fill_manual(values = c("#a61618", "#d01c1e", "#d9494b", "#e37778", "#eca4a5", "#f6d2d2")) +
+  theme_ipsum(base_family = font) +
+  theme(
+    plot.background = element_rect(fill = "#f8f8f8", colour = NA),
+    panel.background = element_rect(fill = "#f8f8f8", colour = NA),
+    legend.title = element_blank(),
+    text = element_text(size = 10),
+    axis.text.y = element_text(size = 10, margin = margin(r = 5)),
+    axis.text.x = element_text(size = 11.5, ),
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    plot.margin = margin(5, 5, 5, 5),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_line(),
+    plot.caption = element_text(face = "plain", family = font, colour = "#818589", hjust = 0),
+    plot.title = element_text(size = 16, margin = margin(0, 0, 5, 8)),
+    plot.subtitle = element_text(size = 12, margin = margin(0, 0, 5, 8), colour = "#818589"),
+    plot.title.position = "plot"
+  )
+```
+
+Assuming that some people might not think celebrities are a serious metric for marathon performance, [runninglevel.com](https://runninglevel.com/running-times/marathon-times) provides a handy scale using a runner's time and age.
+
+So I visualized it. At the ripe old age of 26, my time was just enough to push me into the novice category. Not bad for a first attempt!
+
+Will next time be enough to outrun the man with the hammer? Don't tell my toenails, but I think the only way to find out is to run another one.
+
+So fingers crossed for July when I'll find out if I qualify for London 2026. If I do, you'd best watch out, I'm coming for you Styles...
+
+```{r}
+#| echo: false
+
+# viz 7 - runninglevel.com scale plot + Harry styles
+ggplot(performanceScale, aes(x = age, y = upper)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = skill_level), colour = "white", alpha = 0.8) +
+  labs(
+    title = "Two Harry's locked in a battle for\nmarathon dominance",
+    subtitle = "Marathon performance bands by age and time",
+    caption = "Source:runninglevel.com"
+  ) +
+  geom_point(data = myPerformance, inherit.aes = F, aes(x = age, y = time), shape = 4, size = 4, colour = "#044389", stroke = 2) +
+    annotate("text", x = 28.5, y = 15620, label = "Me", colour = "#044389") +
+  geom_point(data = harryStlesPerformance, inherit.aes = F, aes(x = age, y = time), shape = 4, size = 4, colour = "#143300", stroke = 2) +
+    annotate("text", x = 37, y = 12247, label = "Harry Styles", colour = "#143300") +
+    annotate("rect", xmin = 70.5, xmax = 85, ymin = 0, ymax = 25200, fill = "#f8f8f8") +
+ geom_text(data = text_labels_data, # Use the new data frame
+            aes(x = 71, # Keep the x-position fixed for the labels
+                label = skill_level,
+                colour = skill_level,
+                y = y_text), # Use the calculated midpoint (now numeric)
+            size = 3.5,
+            family = font,
+            fontface = "bold",
+            hjust = 0,
+           colour = "black"
+  ) + 
+  scale_y_continuous(
+    labels = function(x) paste0(sub("^0", "", format(as.POSIXct(x, tz = "GMT"), "%H")), "hr"),
+    breaks = seq(0, 25200, by = 3600),
+    limits = c(0, 25200)
+  ) +
+  scale_x_continuous(
+    breaks = seq(10, 70, by = 5),
+    limits = c(10, 85),
+    expand = c(0, 0)
+  ) +
+  scale_fill_manual(values = c("#a61618", "#d01c1e", "#d9494b", "#e37778", "#eca4a5", "#f6d2d2")) +
+  theme_ipsum(base_family = font) +
+  theme(
+    plot.background = element_rect(fill = "#f8f8f8", colour = NA),
+    panel.background = element_rect(fill = "#f8f8f8", colour = NA),
+    legend.title = element_blank(),
+    text = element_text(size = 10),
+    axis.text.y = element_text(size = 10, margin = margin(r = 5)),
+    axis.text.x = element_text(size = 11.5, ),
+    legend.position = "none",
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    plot.margin = margin(5, 5, 5, 5),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.major.y = element_line(),
+    plot.caption = element_text(face = "plain", family = font, colour = "#818589", hjust = 0),
+    plot.title = element_text(size = 16, margin = margin(0, 0, 5, 8)),
+    plot.subtitle = element_text(size = 12, margin = margin(0, 0, 5, 8), colour = "#818589"),
+    plot.title.position = "plot"
+  )
+```
