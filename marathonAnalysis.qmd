@@ -3,6 +3,10 @@ title: "Race debrief:<br>Manchester Marathon 2025"
 format: html
 editor: visual
 title-fontstyle: "\LARGE"
+
+project:
+  type: website
+  output-dir: docs
 ---
 
 ```{=html}
